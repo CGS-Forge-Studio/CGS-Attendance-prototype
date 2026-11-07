@@ -9,7 +9,8 @@
     "dev:backend": "npm --prefix backend run start:dev",
     "build:frontend": "npm --prefix frontend run build",
     "build:backend": "npm --prefix backend run build",
-    "build": "npm run build:backend && npm run build:frontend",
+    "build": "npm --prefix frontend run build && node scripts/copy-next.js",
+    "build:all": "npm run build:backend && npm run build:frontend",
     "install:all": "npm --prefix backend install && npm --prefix frontend install"
   },
   "workspaces": [
@@ -17,7 +18,7 @@
     "backend"
   ],
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.16.6",
     "concurrently": "^8.2.2"
   }
 }
-
