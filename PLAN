@@ -1,0 +1,73 @@
+# CGS ATTENDANCE SYSTEM - CLOUD ARCHITECTURE & DEPLOYMENT PLAN
+
+## 1. Cloud Architecture Overview
+- **Database (Cloud)**: Supabase PostgreSQL (Managed Free Tier)
+- **Backend (API)**: NestJS deployed on Render or Railway
+- **Frontend (Web App)**: Next.js 14 deployed on Netlify or Vercel
+- **Teacher URL**: Permanent HTTPS link hosted on Netlify (e.g. `https://cgs-attendance.netlify.app`)
+
+---
+
+## 2. Updated Project Files
+```
+Software/
+├── README.md                      # Complete architecture & deployment guide
+├── PLAN                           # Architecture plan & roadmap (this file)
+├── package.json                   # Monorepo scripts
+│
+├── frontend/                      # Next.js Application
+│   ├── .env.example               # NEXT_PUBLIC_API_URL template
+│   ├── .env.local                 # Local development URL
+│   ├── netlify.toml               # Netlify build & Next.js plugin configuration
+│   ├── next.config.mjs            # Dynamic API proxy rewrite
+│   └── src/
+│       ├── services/api.ts        # Dynamic API client with fallback
+│       └── components/            # Modular UI components
+│
+└── backend/                       # NestJS Application
+    ├── .env.example               # DATABASE_URL & ALLOWED_ORIGINS templates
+    ├── .env                       # Local environment variables
+    ├── prisma/
+    │   ├── schema.prisma          # PostgreSQL schema (Class, Teacher, Student, Attendance)
+    │   └── seed.ts                # Database seeder (Class 11-C, 9 students, teacher credentials)
+    └── src/
+        ├── main.ts                # Multi-origin CORS support (*.netlify.app, *.vercel.app)
+        └── prisma/                # PrismaService with PostgreSQL connection & fallback
+```
+
+---
+
+## 3. Deployment Checklist
+
+### Step 1: Supabase Database
+1. Create project on [supabase.com](https://supabase.com).
+2. Grab the connection string from Settings > Database > Connection URI.
+3. Apply schema & seed:
+   ```bash
+   cd backend
+   npx prisma db push
+   npm run seed
+   ```
+
+### Step 2: NestJS Backend (Render / Railway)
+- **Build Command**: `npm run build`
+- **Start Command**: `npm run start:prod`
+- **Env Variables**:
+  - `DATABASE_URL`: Supabase Connection String
+  - `ALLOWED_ORIGINS`: Netlify App URL (e.g., `https://cgs-attendance.netlify.app`)
+  - `PORT`: `3001` (or automatic port provided by host)
+
+### Step 3: Next.js Frontend (Netlify)
+- **Base directory**: `products/Attendance system/Software/frontend`
+- **Build Command**: `npm run build`
+- **Publish Directory**: `.next`
+- **Env Variables**:
+  - `NEXT_PUBLIC_API_URL`: Backend URL (e.g., `https://cgs-attendance-api.onrender.com`)
+
+---
+
+## 4. Test Credentials
+- **Teacher Email**: `teacher.11c@cgs.edu`
+- **Teacher Password**: `Teacher@CGS2026`
+- **Class**: `11 - C` (9 Students)
+- **Cutoff Deadline**: 09:45 AM (Tested via floating Time Simulator)

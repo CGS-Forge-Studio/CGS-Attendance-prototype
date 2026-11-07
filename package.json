@@ -1,0 +1,23 @@
+{
+  "name": "cgs-attendance-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CGS Attendance - Digital School Attendance System Monorepo",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run start:dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
+
