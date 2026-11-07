@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LoginView } from '../components/LoginView';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { StatusBanner } from '../components/StatusBanner';
@@ -66,6 +66,24 @@ export default function AttendanceApp() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // Fetch live saved attendance records for a specific date from Supabase
+  const loadAttendanceForDate = useCallback(async (dateStr: string) => {
+    try {
+      const records = await apiService.getAttendanceForDate(dateStr);
+      if (records && Object.keys(records).length > 0) {
+        setAttendanceData((prev) => ({
+          ...prev,
+          [dateStr]: {
+            ...(prev[dateStr] || {}),
+            ...records,
+          },
+        }));
+      }
+    } catch (err) {
+      console.warn(`Could not load records for ${dateStr}:`, err);
+    }
+  }, []);
+
   // Initialize Real-World Dates, Class Info, and Attendance Data
   useEffect(() => {
     // 1. Fetch dynamic class details from backend
@@ -101,22 +119,29 @@ export default function AttendanceApp() {
     const activeDateStr = formatLocalDate(activeDate);
     setSelectedDateStr(activeDateStr);
 
-    // Initialize mock data for past days, leaving today empty/pending
+    // Initialize blank structure for all available dates
     const initialData: Record<string, Record<number, Status>> = {};
     dates.forEach((date) => {
       const dateStr = formatLocalDate(date);
       initialData[dateStr] = {};
       DEFAULT_STUDENTS.forEach((s) => {
-        // Pre-fill past days; leave active day pending
-        if (dateStr !== activeDateStr) {
-          initialData[dateStr][s.id] = Math.random() > 0.08 ? 'pre' : 'ab';
-        } else {
-          initialData[dateStr][s.id] = null;
-        }
+        initialData[dateStr][s.id] = null;
       });
     });
     setAttendanceData(initialData);
-  }, []);
+
+    // Fetch existing attendance from Supabase for all dates
+    dates.forEach((date) => {
+      loadAttendanceForDate(formatLocalDate(date));
+    });
+  }, [loadAttendanceForDate]);
+
+  // When selected date changes, ensure fresh records are loaded from database
+  useEffect(() => {
+    if (selectedDateStr) {
+      loadAttendanceForDate(selectedDateStr);
+    }
+  }, [selectedDateStr, loadAttendanceForDate]);
 
   // 9:45 AM Cutoff check
   const isPastCutoff = simulatedTime.hours > 9 || (simulatedTime.hours === 9 && simulatedTime.minutes >= 45);
@@ -202,6 +227,9 @@ export default function AttendanceApp() {
         },
         isSimulationActive ? simulatedTime : undefined
       );
+
+      // Re-fetch straight from Supabase to guarantee state persistence
+      await loadAttendanceForDate(selectedDateStr);
 
       setNotification({
         type: 'success',

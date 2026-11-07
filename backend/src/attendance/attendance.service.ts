@@ -27,12 +27,11 @@ export class AttendanceService {
   }
 
   private seedFallbackData() {
-    // Sync with real-world current date
     let d = new Date();
     const dates: string[] = [];
     let count = 0;
     while (count < 5) {
-      if (d.getDay() !== 0) { // Exclude Sundays
+      if (d.getDay() !== 0) {
         dates.unshift(formatLocalDate(d));
         count++;
       }
@@ -44,7 +43,6 @@ export class AttendanceService {
 
     dates.forEach((dateStr) => {
       this.inMemoryAttendance[dateStr] = {};
-      // Fill older days, leave today & yesterday pending
       if (dateStr !== today && dateStr !== yesterday) {
         for (let studentId = 1; studentId <= 40; studentId++) {
           this.inMemoryAttendance[dateStr][studentId] = studentId % 7 === 0 ? 'ab' : 'pre';
@@ -77,7 +75,6 @@ export class AttendanceService {
 
   /**
    * Returns list of dates (excluding Sundays) and whether attendance is pending
-   * Synced with real-world date
    */
   async getAttendanceDates(): Promise<DateStatusItem[]> {
     const result: DateStatusItem[] = [];
@@ -106,14 +103,15 @@ export class AttendanceService {
   }
 
   /**
-   * Fetches attendance for a given date
+   * Fetches attendance for a given date from Supabase
    */
   async getAttendanceByDate(dateStr: string) {
     if (this.prisma.isConnected) {
       try {
+        const targetDate = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00.000Z'));
         const records = await this.prisma.attendance.findMany({
           where: {
-            date: new Date(dateStr),
+            date: targetDate,
           },
         });
 
@@ -131,7 +129,7 @@ export class AttendanceService {
           isPending: Object.keys(studentMap).length < expectedCount,
         };
       } catch (err: any) {
-        this.logger.warn(`Prisma query failed for date ${dateStr}, using fallback store: ${err.message}`);
+        this.logger.warn(`Prisma query failed for date ${dateStr}: ${err.message}`);
       }
     }
 
@@ -161,16 +159,22 @@ export class AttendanceService {
 
     if (this.prisma.isConnected) {
       try {
-        const targetDate = new Date(dto.date);
-        
-        // Upsert each attendance record in PostgreSQL
+        const targetDate = new Date(dto.date + (dto.date.includes('T') ? '' : 'T00:00:00.000Z'));
+        const allStudents = await this.prisma.student.findMany({ select: { id: true, rollNumber: true }, orderBy: { id: 'asc' } });
+        const validIds = new Set(allStudents.map((s) => s.id));
+
+        // Upsert each attendance record in PostgreSQL (Supabase)
         await this.prisma.$transaction(
-          dto.records.map((r) =>
-            this.prisma.attendance.upsert({
+          dto.records.map((r, index) => {
+            const studentId = validIds.has(r.studentId)
+              ? r.studentId
+              : (allStudents[index]?.id || r.studentId);
+
+            return this.prisma.attendance.upsert({
               where: {
                 date_studentId: {
                   date: targetDate,
-                  studentId: r.studentId,
+                  studentId,
                 },
               },
               update: {
@@ -178,16 +182,17 @@ export class AttendanceService {
               },
               create: {
                 date: targetDate,
-                studentId: r.studentId,
+                studentId,
                 status: r.status,
               },
-            })
-          )
+            });
+          })
         );
 
-        this.logger.log(`Persisted ${dto.records.length} records to PostgreSQL for ${dto.date}`);
+        this.logger.log(`Successfully persisted ${dto.records.length} records to Supabase for ${dto.date}`);
       } catch (err: any) {
-        this.logger.warn(`Failed persisting to PostgreSQL: ${err.message}. Saving to fallback cache.`);
+        this.logger.error(`Database persistence error on Supabase: ${err.message}`, err.stack);
+        throw new Error(`Failed to save attendance in database: ${err.message}`);
       }
     }
 
