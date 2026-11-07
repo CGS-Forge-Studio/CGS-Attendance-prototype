@@ -5,7 +5,6 @@ import { LoginView } from '../components/LoginView';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { StatusBanner } from '../components/StatusBanner';
 import { StudentList } from '../components/StudentList';
-import { TimeSimulator } from '../components/TimeSimulator';
 import { Student, Status, ClassDetails, SimulatedTime } from '../types/attendance';
 import { apiService } from '../services/api';
 import { ArrowLeft, CheckCircle2, CheckCheck, UserX } from 'lucide-react';
@@ -227,14 +226,25 @@ export default function AttendanceApp() {
   const currentTimeFormatted = `${String(simulatedTime.hours).padStart(2, '0')}:${String(simulatedTime.minutes).padStart(2, '0')}`;
 
   return (
-    <div className="min-h-screen bg-[#F4F2F7] pb-28">
-      {/* Top Header */}
+    <div className="min-h-screen bg-[#F4F2F7] pb-12">
+      {/* Top Header with Integrated Time Controller */}
       <DashboardHeader
         availableDates={availableDates}
         selectedDateStr={selectedDateStr}
         onSelectDate={setSelectedDateStr}
         isDayPending={isDayPending}
         formatDate={formatLocalDate}
+        simulatedTime={simulatedTime}
+        isPastCutoff={isPastCutoff}
+        isSimulationActive={isSimulationActive}
+        onSetTime={(time) => {
+          setIsSimulationActive(true);
+          setSimulatedTime(time);
+        }}
+        onResetToLive={() => {
+          setIsSimulationActive(false);
+          setSimulatedTime(getSystemTime());
+        }}
       />
 
       {/* Main Content Area */}
@@ -333,21 +343,6 @@ export default function AttendanceApp() {
           </button>
         </div>
       </main>
-
-      {/* Floating Developer Time Simulator */}
-      <TimeSimulator
-        simulatedTime={simulatedTime}
-        isPastCutoff={isPastCutoff}
-        isSimulationActive={isSimulationActive}
-        onSetTime={(time) => {
-          setIsSimulationActive(true);
-          setSimulatedTime(time);
-        }}
-        onResetToLive={() => {
-          setIsSimulationActive(false);
-          setSimulatedTime(getSystemTime());
-        }}
-      />
     </div>
   );
 }

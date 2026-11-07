@@ -10,3 +10,4 @@ if (fs.existsSync(src)) {
 } else {
   console.warn('⚠️ Warning: frontend/.next was not found to copy.');
 }
+
