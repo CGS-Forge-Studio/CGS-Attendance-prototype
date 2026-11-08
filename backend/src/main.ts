@@ -2,9 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import * as dotenv from 'dotenv';
+import * as path from 'path';
 
-// Load environment variables from .env
+// Load environment variables from .env (checks cwd, backend folder, and dist relative)
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
+dotenv.config({ path: path.resolve(process.cwd(), 'backend', '.env') });
+
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
