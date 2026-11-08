@@ -32,10 +32,13 @@ async function bootstrap() {
     ...configuredOrigins,
   ];
 
+  // Enable global /api route prefix
+  app.setGlobalPrefix('api', { exclude: ['health'] });
+
   // Enable standard, robust CORS
   app.enableCors({
     origin: allowedOrigins,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization', 'x-simulated-time', 'Accept'],
   });

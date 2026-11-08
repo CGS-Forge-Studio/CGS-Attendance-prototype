@@ -1,17 +1,29 @@
 import { ClassDetails, AttendanceSubmissionPayload, Student } from '../types/attendance';
 
-// Live production Render backend URL
-const LIVE_BACKEND_URL = 'https://cgs-attendance-prototype.onrender.com';
+// Default production Render backend URL fallback
+const DEFAULT_RENDER_BACKEND_URL = 'https://cgs-attendance-prototype.onrender.com';
 
-function getApiBaseUrl(): string {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, '');
-  }
-  // When running on Netlify or any remote host in the browser, default to live backend
-  if (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')) {
-    return LIVE_BACKEND_URL;
-  }
-  return 'http://localhost:3001';
+/**
+ * URL Sanitization Helper:
+ * Strictly uses process.env.NEXT_PUBLIC_API_URL, strips trailing slashes,
+ * and formats the endpoint path to prevent double-slashes (//).
+ */
+export function buildApiUrl(path: string): string {
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
+
+  // If env var is set, use it; otherwise fallback based on environment
+  const rawBase = envUrl ||
+    (typeof window !== 'undefined' && !window.location.hostname.includes('localhost') && !window.location.hostname.includes('127.0.0.1')
+      ? DEFAULT_RENDER_BACKEND_URL
+      : 'http://localhost:3001');
+
+  // Strip trailing slashes from base
+  const cleanBase = rawBase.replace(/\/+$/, '');
+
+  // Ensure path starts with a single slash and contains no double slashes
+  const cleanPath = ('/' + path.replace(/^\/+/, '')).replace(/\/+/g, '/');
+
+  return `${cleanBase}${cleanPath}`;
 }
 
 export const apiService = {
@@ -19,24 +31,32 @@ export const apiService = {
    * Fetch Class Details (e.g., 11-C strength and avg attendance)
    */
   async getClassDetails(className = '11', section = 'c'): Promise<ClassDetails> {
-    const baseUrl = getApiBaseUrl();
+    const endpoint = buildApiUrl(`/api/class/${className}-${section}/details`);
+    console.log(`[API] Fetching class details from: ${endpoint}`);
+
     try {
-      const endpoint = `${baseUrl}/api/class/${className}-${section}/details`;
       const res = await fetch(endpoint, {
         headers: {
           'Accept': 'application/json',
         },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch class details`);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to fetch class details` }));
+        console.error('[API] Backend rejected getClassDetails:', errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}: Failed to fetch class details`);
+      }
+
       return await res.json();
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[API] getClassDetails failed:', err);
       // Fallback for offline/standalone prototype testing
       return {
         name: className.toUpperCase(),
         section: section.toUpperCase(),
         strength: 40,
         avgAttendance: '92%',
-        teacherName: 'Swarnamugi',
+        teacherName: 'Swarnamugi Mam',
       };
     }
   },
@@ -45,17 +65,25 @@ export const apiService = {
    * Fetch Students for Class (e.g. 40 students 11c01 - 11c40)
    */
   async getClassStudents(className = '11', section = 'c'): Promise<Student[]> {
-    const baseUrl = getApiBaseUrl();
+    const endpoint = buildApiUrl(`/api/class/${className}-${section}/students`);
+    console.log(`[API] Fetching students from: ${endpoint}`);
+
     try {
-      const endpoint = `${baseUrl}/api/class/${className}-${section}/students`;
       const res = await fetch(endpoint, {
         headers: {
           'Accept': 'application/json',
         },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch students`);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to fetch students` }));
+        console.error('[API] Backend rejected getClassStudents:', errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}: Failed to fetch students`);
+      }
+
       return await res.json();
-    } catch (err) {
+    } catch (err: any) {
+      console.error('[API] getClassStudents failed:', err);
       // Fallback: 40 placeholder students
       return Array.from({ length: 40 }, (_, i) => {
         const suffix = (i + 1).toString().padStart(2, '0');
@@ -73,18 +101,26 @@ export const apiService = {
    * Fetch attendance records for a specific date
    */
   async getAttendanceForDate(dateStr: string): Promise<Record<number, 'pre' | 'ab' | 'od'> | null> {
-    const baseUrl = getApiBaseUrl();
+    const endpoint = `${buildApiUrl('/api/attendance')}?date=${encodeURIComponent(dateStr)}`;
+    console.log(`[API] Fetching attendance for date: ${endpoint}`);
+
     try {
-      const endpoint = `${baseUrl}/api/attendance?date=${encodeURIComponent(dateStr)}`;
       const res = await fetch(endpoint, {
         headers: {
           'Accept': 'application/json',
         },
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch attendance`);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to fetch attendance` }));
+        console.error(`[API] Backend rejected getAttendanceForDate for ${dateStr}:`, errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}: Failed to fetch attendance`);
+      }
+
       const data = await res.json();
       return data.records || null;
-    } catch (err) {
+    } catch (err: any) {
+      console.error(`[API] getAttendanceForDate failed for ${dateStr}:`, err);
       return null;
     }
   },
@@ -97,7 +133,7 @@ export const apiService = {
     payload: AttendanceSubmissionPayload,
     simulatedTime?: { hours: number; minutes: number }
   ): Promise<{ success: boolean; message: string }> {
-    const baseUrl = getApiBaseUrl();
+    const endpoint = buildApiUrl('/api/attendance');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
@@ -107,7 +143,6 @@ export const apiService = {
       headers['x-simulated-time'] = `${String(simulatedTime.hours).padStart(2, '0')}:${String(simulatedTime.minutes).padStart(2, '0')}`;
     }
 
-    const endpoint = `${baseUrl}/api/attendance`;
     console.log(`[API] Submitting attendance to ${endpoint}:`, payload);
 
     try {

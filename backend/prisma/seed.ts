@@ -13,7 +13,7 @@ async function main() {
     data: {
       name: '11-C',
       section: 'C',
-      teacherName: 'Swarnamugi',
+      teacherName: 'Swarnamugi Mam',
       totalStrength: 40,
     },
   });

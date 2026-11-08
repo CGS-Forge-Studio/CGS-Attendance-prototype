@@ -6,8 +6,9 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model Class {
@@ -40,7 +41,7 @@ model Student {
   rollNumber String       @unique
   name       String
   classId    Int
-  class      Class        @relation(fields: [classId], references: [id])
+  class      Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
   attendance Attendance[]
 
   @@map("students")
@@ -51,7 +52,7 @@ model Attendance {
   date       DateTime @db.Date
   status     String   // "pre", "ab", "od"
   studentId  Int
-  student    Student  @relation(fields: [studentId], references: [id])
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   updatedAt  DateTime @updatedAt
 
   @@unique([date, studentId]) // One record per student per day

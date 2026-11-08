@@ -3,7 +3,7 @@ import { AttendanceService } from './attendance.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { AttendanceQueryDto } from './dto/attendance-query.dto';
 
-@Controller('api/attendance')
+@Controller('attendance')
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 

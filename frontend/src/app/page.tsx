@@ -34,7 +34,7 @@ export default function AttendanceApp() {
     section: 'C',
     strength: 40,
     avgAttendance: '92%',
-    teacherName: 'Swarnamugi',
+    teacherName: 'Swarnamugi Mam',
   });
 
   // Real-world Time & Simulator State

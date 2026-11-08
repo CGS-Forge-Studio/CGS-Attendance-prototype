@@ -60,7 +60,7 @@ export class ClassService {
       section: section.toUpperCase(),
       strength: 40,
       avgAttendance: '92%',
-      teacherName: 'Swarnamugi',
+      teacherName: 'Swarnamugi Mam',
     };
   }
 
