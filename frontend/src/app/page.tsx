@@ -7,7 +7,7 @@ import { StatusBanner } from '../components/StatusBanner';
 import { StudentList } from '../components/StudentList';
 import { Student, Status, ClassDetails, SimulatedTime } from '../types/attendance';
 import { apiService } from '../services/api';
-import { ArrowLeft, CheckCircle2, CheckCheck, UserX } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CheckCheck, UserX, Check } from 'lucide-react';
 
 const DEFAULT_STUDENTS: Student[] = Array.from({ length: 40 }, (_, i) => {
   const suffix = (i + 1).toString().padStart(2, '0');
@@ -63,6 +63,11 @@ export default function AttendanceApp() {
 
   // Attendance State: Record<DateString, Record<StudentId, Status>>
   const [attendanceData, setAttendanceData] = useState<Record<string, Record<number, Status>>>({});
+  // Track database saved state per date
+  const [savedDates, setSavedDates] = useState<Record<string, boolean>>({});
+  // Track dirty changes made by user
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<Record<string, boolean>>({});
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -78,9 +83,14 @@ export default function AttendanceApp() {
             ...records,
           },
         }));
+        setSavedDates((prev) => ({ ...prev, [dateStr]: true }));
+        setHasUnsavedChanges((prev) => ({ ...prev, [dateStr]: false }));
+      } else {
+        setSavedDates((prev) => ({ ...prev, [dateStr]: false }));
       }
     } catch (err) {
       console.warn(`Could not load records for ${dateStr}:`, err);
+      setSavedDates((prev) => ({ ...prev, [dateStr]: false }));
     }
   }, []);
 
@@ -157,6 +167,7 @@ export default function AttendanceApp() {
         [studentId]: status,
       },
     }));
+    setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: true }));
   };
 
   // Mark all students as Leave (Absent) for the current day
@@ -173,6 +184,7 @@ export default function AttendanceApp() {
         [selectedDateStr]: updatedDay,
       };
     });
+    setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: true }));
 
     setNotification({
       type: 'success',
@@ -194,23 +206,21 @@ export default function AttendanceApp() {
         [selectedDateStr]: updatedDay,
       };
     });
+    setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: true }));
 
     setNotification({
       type: 'success',
-      message: `Marked all ${students.length} students as Present for ${selectedDateStr}.`,
+      message: `Marked all ${students.length} students as Present for ${selectedDateStr}. Click "Submit Attendance" to save.`,
     });
   };
 
+  // A date is pending if it has not yet been saved to Supabase
   const isDayPending = (dateStr: string): boolean => {
-    if (!attendanceData[dateStr]) return true;
-    return Object.values(attendanceData[dateStr]).some((status) => status === null);
+    return !savedDates[dateStr];
   };
 
   const handleSubmit = async () => {
-    if (isPastCutoff || !isDayPending(selectedDateStr)) return;
-
-    setIsSubmitting(true);
-    setNotification(null);
+    if (isPastCutoff || isSubmitting) return;
 
     const currentRecords = attendanceData[selectedDateStr] || {};
     const records = Object.entries(currentRecords)
@@ -219,6 +229,17 @@ export default function AttendanceApp() {
         studentId: Number(studentId),
         status: status as 'pre' | 'ab' | 'od',
       }));
+
+    if (records.length === 0) {
+      setNotification({
+        type: 'error',
+        message: 'Please mark at least one student before submitting.',
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setNotification(null);
 
     try {
       await apiService.submitAttendance(
@@ -229,6 +250,10 @@ export default function AttendanceApp() {
         isSimulationActive ? simulatedTime : undefined
       );
 
+      // Successfully saved in Supabase
+      setSavedDates((prev) => ({ ...prev, [selectedDateStr]: true }));
+      setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: false }));
+
       // Re-fetch straight from Supabase to guarantee state persistence
       await loadAttendanceForDate(selectedDateStr);
 
@@ -237,6 +262,7 @@ export default function AttendanceApp() {
         message: `Attendance for ${selectedDateStr} saved to database successfully!`,
       });
     } catch (err: any) {
+      console.error('[Attendance] Submit failed:', err);
       setNotification({
         type: 'error',
         message: err.message || 'Error submitting attendance.',
@@ -251,7 +277,9 @@ export default function AttendanceApp() {
     return <LoginView classDetails={classDetails} onLogin={() => setView('dashboard')} />;
   }
 
-  const currentDayPending = isDayPending(selectedDateStr);
+  const isSaved = !!savedDates[selectedDateStr];
+  const isDirty = !!hasUnsavedChanges[selectedDateStr];
+  const canSubmit = !isPastCutoff && !isSubmitting && (isDirty || !isSaved);
   const currentTimeFormatted = `${String(simulatedTime.hours).padStart(2, '0')}:${String(simulatedTime.minutes).padStart(2, '0')}`;
 
   return (
@@ -310,6 +338,10 @@ export default function AttendanceApp() {
           isPastCutoff={isPastCutoff}
           currentTimeFormatted={currentTimeFormatted}
           isSimulated={isSimulationActive}
+          onUnlockSimulation={() => {
+            setIsSimulationActive(true);
+            setSimulatedTime({ hours: 9, minutes: 30 });
+          }}
         />
 
         {/* Quick Actions Toolbar */}
@@ -352,23 +384,30 @@ export default function AttendanceApp() {
         {/* Submit Attendance Button */}
         <div className="mt-8">
           <button
-            disabled={isPastCutoff || !currentDayPending || isSubmitting}
+            disabled={!canSubmit}
             onClick={handleSubmit}
             className={`w-full rounded-2xl py-4 font-semibold text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
               isPastCutoff
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none'
-                : !currentDayPending
-                ? 'bg-purple-950 text-white cursor-default'
-                : 'bg-purple-900 text-white hover:bg-purple-800 active:scale-[0.99]'
+                : isSubmitting
+                ? 'bg-purple-800 text-white cursor-wait opacity-90'
+                : isSaved && !isDirty
+                ? 'bg-emerald-700 text-white hover:bg-emerald-800 shadow-emerald-100'
+                : 'bg-purple-900 text-white hover:bg-purple-800 active:scale-[0.99] shadow-purple-200'
             }`}
           >
-            {isSubmitting
-              ? 'Submitting...'
-              : isPastCutoff
-              ? 'Attendance Locked'
-              : !currentDayPending
-              ? 'All Marked (Saved)'
-              : 'Submit Attendance'}
+            {isSubmitting ? (
+              'Submitting to Supabase...'
+            ) : isPastCutoff ? (
+              'Attendance Locked (> 09:45 AM)'
+            ) : isSaved && !isDirty ? (
+              <>
+                <Check size={20} className="text-white" />
+                Attendance Saved in Database
+              </>
+            ) : (
+              'Submit Attendance'
+            )}
           </button>
         </div>
       </main>
