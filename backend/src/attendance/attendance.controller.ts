@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Body, Query, Param, Headers, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Query,
+  Param,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  BadRequestException,
+} from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { AttendanceQueryDto } from './dto/attendance-query.dto';
@@ -47,5 +59,28 @@ export class AttendanceController {
     @Headers('x-simulated-time') simulatedTime?: string
   ) {
     return this.attendanceService.recordAttendance(dto, simulatedTime);
+  }
+
+  /**
+   * DELETE /api/attendance?date=YYYY-MM-DD
+   * Purges attendance records for a given date
+   */
+  @Delete()
+  @HttpCode(HttpStatus.OK)
+  async deleteAttendanceByQuery(@Query('date') dateQuery?: string) {
+    if (!dateQuery) {
+      throw new BadRequestException('Query parameter "date" (YYYY-MM-DD) is required.');
+    }
+    return this.attendanceService.deleteAttendanceForDate(dateQuery);
+  }
+
+  /**
+   * DELETE /api/attendance/:date
+   * Purges attendance records for a given date by route param
+   */
+  @Delete(':date')
+  @HttpCode(HttpStatus.OK)
+  async deleteAttendanceByParam(@Param('date') dateParam: string) {
+    return this.attendanceService.deleteAttendanceForDate(dateParam);
   }
 }

@@ -82,6 +82,7 @@ export default function AttendanceApp() {
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(true);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Fetch live saved attendance records for a specific date from Supabase
@@ -109,19 +110,7 @@ export default function AttendanceApp() {
 
   // Initialize Real-World Dates, Class Info, and Attendance Data
   useEffect(() => {
-    // 1. Fetch dynamic class details from backend
-    apiService.getClassDetails('11', 'c').then((details) => {
-      if (details) setClassDetails(details);
-    });
-
-    // 2. Fetch live students list from backend
-    apiService.getClassStudents('11', 'c').then((fetched) => {
-      if (fetched && fetched.length > 0) {
-        setStudents(fetched);
-      }
-    });
-
-    // 3. Initialize dates: include today and the previous working days
+    // 1. Initialize dates: include today and the previous working days
     const dates: Date[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -154,9 +143,19 @@ export default function AttendanceApp() {
     });
     setAttendanceData(initialData);
 
-    // Fetch existing attendance from Supabase for all dates
-    dates.forEach((date) => {
-      loadAttendanceForDate(formatLocalDate(date));
+    // Concurrently fetch dynamic class details, live student roster, and attendance from Supabase
+    Promise.allSettled([
+      apiService.getClassDetails('11', 'c').then((details) => {
+        if (details) setClassDetails(details);
+      }),
+      apiService.getClassStudents('11', 'c').then((fetched) => {
+        if (fetched && fetched.length > 0) {
+          setStudents(fetched);
+        }
+      }),
+      ...dates.map((date) => loadAttendanceForDate(formatLocalDate(date))),
+    ]).finally(() => {
+      setIsLoadingData(false);
     });
   }, [loadAttendanceForDate]);
 
@@ -184,8 +183,8 @@ export default function AttendanceApp() {
     setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: true }));
   };
 
-  // Toggle "Holiday / Off Day" for the current date (Zero schema change — no Supabase submission)
-  const handleToggleHoliday = () => {
+  // Toggle "Holiday / Off Day" for the current date (Zero schema change — no mass-absent persistence)
+  const handleToggleHoliday = async () => {
     const nextState = !holidays[selectedDateStr];
     setHolidays((prev) => {
       const updated = { ...prev, [selectedDateStr]: nextState };
@@ -195,12 +194,47 @@ export default function AttendanceApp() {
       return updated;
     });
 
-    setNotification({
-      type: 'success',
-      message: nextState
-        ? `Marked ${selectedDateStr} as Holiday / Off Day — Attendance Not Required.`
-        : `Holiday removed for ${selectedDateStr}. Regular attendance enabled.`,
-    });
+    if (nextState) {
+      // If an attendance session was already recorded in database for this date, purge it cleanly
+      if (savedDates[selectedDateStr]) {
+        try {
+          await apiService.deleteAttendanceForDate(selectedDateStr);
+          setSavedDates((prev) => ({ ...prev, [selectedDateStr]: false }));
+          setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: false }));
+          // Reset local attendance data
+          setAttendanceData((prev) => {
+            const blankDay: Record<number, Status> = {};
+            students.forEach((s) => {
+              blankDay[s.id] = null;
+            });
+            return {
+              ...prev,
+              [selectedDateStr]: blankDay,
+            };
+          });
+          setNotification({
+            type: 'success',
+            message: `Marked ${selectedDateStr} as Holiday / Off Day — Purged prior database records.`,
+          });
+        } catch (err: any) {
+          console.error(`Failed to purge attendance records for ${selectedDateStr}:`, err);
+          setNotification({
+            type: 'error',
+            message: `Holiday marked, but failed to purge previous database records: ${err.message}`,
+          });
+        }
+      } else {
+        setNotification({
+          type: 'success',
+          message: `Marked ${selectedDateStr} as Holiday / Off Day — Attendance Not Required.`,
+        });
+      }
+    } else {
+      setNotification({
+        type: 'success',
+        message: `Holiday removed for ${selectedDateStr}. Regular attendance enabled.`,
+      });
+    }
   };
 
   // Mark all students as Present for the current day
@@ -291,7 +325,7 @@ export default function AttendanceApp() {
 
   const isSaved = !!savedDates[selectedDateStr];
   const isDirty = !!hasUnsavedChanges[selectedDateStr];
-  const canSubmit = !isCurrentHoliday && !isPastCutoff && !isSubmitting && (isDirty || !isSaved);
+  const canSubmit = !isLoadingData && !isCurrentHoliday && !isPastCutoff && !isSubmitting && (isDirty || !isSaved);
   const currentTimeFormatted = `${String(simulatedTime.hours).padStart(2, '0')}:${String(simulatedTime.minutes).padStart(2, '0')}`;
 
   return (
@@ -390,36 +424,62 @@ export default function AttendanceApp() {
           </div>
         </div>
 
-        {/* Student List with Holiday Overlay */}
+        {/* Student List with Holiday Overlay & Loading Skeletons */}
         <div className="relative">
-          {isCurrentHoliday && (
-            <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] rounded-3xl flex flex-col items-center justify-center p-6 text-center border-2 border-dashed border-amber-300 shadow-sm animate-in fade-in duration-200">
-              <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mb-3 shadow-inner">
-                <CalendarOff size={32} />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-1">
-                School Closed / Holiday
-              </h3>
-              <p className="text-sm font-semibold text-amber-800 max-w-sm mb-4">
-                Attendance Not Required
-              </p>
-              <button
-                onClick={handleToggleHoliday}
-                className="px-4 py-2 bg-white text-gray-800 text-xs font-bold rounded-xl border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
-              >
-                Change to Instructional Day
-              </button>
+          {isLoadingData ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div
+                  key={i}
+                  className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between animate-pulse"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-purple-50 rounded-xl" />
+                    <div>
+                      <div className="w-24 h-4 bg-gray-200 rounded mb-1.5" />
+                      <div className="w-16 h-3 bg-gray-100 rounded" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="w-12 h-9 bg-gray-100 rounded-xl" />
+                    <div className="w-12 h-9 bg-gray-100 rounded-xl" />
+                    <div className="w-12 h-9 bg-gray-100 rounded-xl" />
+                  </div>
+                </div>
+              ))}
             </div>
-          )}
+          ) : (
+            <>
+              {isCurrentHoliday && (
+                <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] rounded-3xl flex flex-col items-center justify-center p-6 text-center border-2 border-dashed border-amber-300 shadow-sm animate-in fade-in duration-200">
+                  <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mb-3 shadow-inner">
+                    <CalendarOff size={32} />
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-1">
+                    School Closed / Holiday
+                  </h3>
+                  <p className="text-sm font-semibold text-amber-800 max-w-sm mb-4">
+                    Attendance Not Required
+                  </p>
+                  <button
+                    onClick={handleToggleHoliday}
+                    className="px-4 py-2 bg-white text-gray-800 text-xs font-bold rounded-xl border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
+                  >
+                    Change to Instructional Day
+                  </button>
+                </div>
+              )}
 
-          <div className={isCurrentHoliday ? 'opacity-30 pointer-events-none select-none filter blur-[0.5px]' : ''}>
-            <StudentList
-              students={students}
-              currentAttendance={attendanceData[selectedDateStr] || {}}
-              isPastCutoff={isPastCutoff || isCurrentHoliday}
-              onMarkAttendance={handleMarkAttendance}
-            />
-          </div>
+              <div className={isCurrentHoliday ? 'opacity-30 pointer-events-none select-none filter blur-[0.5px]' : ''}>
+                <StudentList
+                  students={students}
+                  currentAttendance={attendanceData[selectedDateStr] || {}}
+                  isPastCutoff={isPastCutoff || isCurrentHoliday}
+                  onMarkAttendance={handleMarkAttendance}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Submit Attendance Button */}

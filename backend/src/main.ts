@@ -32,6 +32,9 @@ async function bootstrap() {
     ...configuredOrigins,
   ];
 
+  // Enable shutdown hooks for clean database disconnecting
+  app.enableShutdownHooks();
+
   // Enable global /api route prefix
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
@@ -40,7 +43,7 @@ async function bootstrap() {
     origin: allowedOrigins,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-simulated-time', 'Accept'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-simulated-time', 'Accept', 'x-requested-with'],
   });
 
   // Enable DTO validation pipeline
@@ -48,7 +51,7 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: false,
+      forbidNonWhitelisted: true,
     })
   );
 

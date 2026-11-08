@@ -1,4 +1,11 @@
-import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { CreateAttendanceDto, AttendanceStatusType } from './dto/create-attendance.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -74,9 +81,11 @@ export class AttendanceService {
     let minutes: number;
 
     if (simulatedTimeHeader && simulatedTimeHeader.includes(':')) {
-      const [h, m] = simulatedTimeHeader.split(':').map(Number);
-      hours = isNaN(h) ? 9 : h;
-      minutes = isNaN(m) ? 30 : m;
+      const parts = simulatedTimeHeader.split(':').map((p) => parseInt(p, 10));
+      const h = parts[0];
+      const m = parts[1];
+      hours = !isNaN(h) && h >= 0 && h <= 23 ? h : 9;
+      minutes = !isNaN(m) && m >= 0 && m <= 59 ? m : 30;
     } else {
       const now = new Date();
       hours = now.getHours();
@@ -167,6 +176,10 @@ export class AttendanceService {
    * CRITICAL VALIDATION: Rejects if currentTime > 09:45 AM with 403 Forbidden
    */
   async recordAttendance(dto: CreateAttendanceDto, simulatedTimeHeader?: string) {
+    if (!dto.records || dto.records.length === 0) {
+      throw new BadRequestException('Attendance records payload cannot be empty.');
+    }
+
     const { isPastCutoff, timeUsed } = this.checkCutoffTime(simulatedTimeHeader);
 
     if (isPastCutoff) {
@@ -212,7 +225,7 @@ export class AttendanceService {
         this.logger.log(`Successfully persisted ${dto.records.length} records to Supabase for ${dto.date}`);
       } catch (err: any) {
         this.logger.error(`Database persistence error on Supabase: ${err.message}`, err.stack);
-        throw new Error(`Failed to save attendance in database: ${err.message}`);
+        throw new InternalServerErrorException(`Failed to save attendance in database: ${err.message}`);
       }
     }
 
@@ -231,6 +244,54 @@ export class AttendanceService {
       date: dto.date,
       count: dto.records.length,
       timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Purges attendance records for a given date (e.g. holiday or mistaken submission)
+   */
+  async deleteAttendanceForDate(dateStr: string) {
+    if (!dateStr || !dateStr.trim()) {
+      throw new BadRequestException('A valid date string (YYYY-MM-DD) is required.');
+    }
+    const cleanDate = dateStr.trim();
+    let targetDate: Date;
+    try {
+      targetDate = new Date(cleanDate + (cleanDate.includes('T') ? '' : 'T00:00:00.000Z'));
+      if (isNaN(targetDate.getTime())) {
+        throw new Error('Invalid date');
+      }
+    } catch {
+      throw new BadRequestException(`Invalid date format provided: ${dateStr}`);
+    }
+
+    let deletedCount = 0;
+
+    if (this.prisma.isConnected) {
+      try {
+        const deleteResult = await this.prisma.attendance.deleteMany({
+          where: {
+            date: targetDate,
+          },
+        });
+        deletedCount = deleteResult.count;
+        this.logger.log(`Purged ${deletedCount} attendance records for date ${cleanDate} from Supabase.`);
+      } catch (err: any) {
+        this.logger.error(`Database deletion error on Supabase for ${cleanDate}: ${err.message}`, err.stack);
+        throw new InternalServerErrorException(`Failed to delete attendance records: ${err.message}`);
+      }
+    }
+
+    if (this.inMemoryAttendance[cleanDate]) {
+      deletedCount = Math.max(deletedCount, Object.keys(this.inMemoryAttendance[cleanDate]).length);
+      delete this.inMemoryAttendance[cleanDate];
+    }
+
+    return {
+      success: true,
+      message: `Successfully purged attendance records for ${cleanDate}`,
+      deletedCount,
+      date: cleanDate,
     };
   }
 
@@ -322,6 +383,12 @@ export class AttendanceService {
       const totalMarked = counts.presentCount + counts.absentCount + counts.odCount;
       const effectiveTotal = totalMarked > 0 ? totalMarked : totalStrength;
       const attended = counts.presentCount + counts.odCount;
+
+      // Metric Integrity: Exclude zero-turnout / mass-absent dates from actual instructional days
+      if (attended === 0 && counts.absentCount > 0) {
+        continue;
+      }
+
       const rate = effectiveTotal > 0 ? Number(((attended / effectiveTotal) * 100).toFixed(1)) : 0;
 
       sessions.push({

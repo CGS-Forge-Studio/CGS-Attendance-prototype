@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { 
   ArrowLeft, 
@@ -19,23 +19,24 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await apiService.getClassAnalytics('11-C');
       setAnalytics(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[Analytics] Fetch error:', err);
-      setError(err.message || 'Failed to load attendance analytics.');
+      const msg = err instanceof Error ? err.message : 'Failed to load attendance analytics.';
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchAnalytics();
-  }, []);
+  }, [fetchAnalytics]);
 
   const formatDateDisplay = (dateStr: string): string => {
     try {

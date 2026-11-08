@@ -189,6 +189,36 @@ export const apiService = {
   },
 
   /**
+   * Purges attendance records for a specific date (e.g. holiday or mistaken entry)
+   */
+  async deleteAttendanceForDate(dateStr: string): Promise<{ success: boolean; message: string; deletedCount: number }> {
+    const endpoint = `${buildApiUrl('/api/attendance')}?date=${encodeURIComponent(dateStr)}`;
+    console.log(`[API] Purging attendance records for date: ${endpoint}`);
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'DELETE',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to delete attendance` }));
+        console.error(`[API] Backend rejected deleteAttendanceForDate for ${dateStr}:`, errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}: Failed to delete attendance`);
+      }
+
+      const data = await res.json();
+      console.log('[API] Attendance records purged successfully:', data);
+      return data;
+    } catch (err: any) {
+      console.error(`[API] deleteAttendanceForDate failed for ${dateStr}:`, err);
+      throw err;
+    }
+  },
+
+  /**
    * Fetch Attendance Performance & Analytics for a class
    * Rule: Uses buildApiUrl, cache: 'no-store', wrapped in try/catch with console.error
    */
