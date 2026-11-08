@@ -108,22 +108,33 @@ export const apiService = {
     }
 
     const endpoint = `${baseUrl}/api/attendance`;
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-    });
+    console.log(`[API] Submitting attendance to ${endpoint}:`, payload);
 
-    if (res.status === 403) {
-      const errorData = await res.json().catch(() => ({ message: 'Attendance submission locked after 09:45 AM.' }));
-      throw new Error(errorData.message || 'Attendance Locked: Past 09:45 AM deadline.');
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 403) {
+        const errorData = await res.json().catch(() => ({ message: 'Attendance submission locked after 09:45 AM.' }));
+        console.warn('[API] Cutoff lock (403):', errorData);
+        throw new Error(errorData.message || 'Attendance Locked: Past 09:45 AM deadline.');
+      }
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to submit attendance` }));
+        console.error('[API] Backend rejected the data:', errorData);
+        throw new Error(errorData.message || `Failed to save: HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      console.log('[API] Attendance successfully persisted to Supabase:', data);
+      return data;
+    } catch (err: any) {
+      console.error('[API] Network/Fetch error during submission:', err);
+      throw err;
     }
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: 'Failed to submit attendance' }));
-      throw new Error(err.message || 'Submission failed');
-    }
-
-    return await res.json();
   },
 };

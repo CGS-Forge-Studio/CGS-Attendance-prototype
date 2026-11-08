@@ -60,7 +60,6 @@ export default function AttendanceApp() {
   // Real-world Date State
   const [availableDates, setAvailableDates] = useState<Date[]>([]);
   const [selectedDateStr, setSelectedDateStr] = useState<string>('');
-  const [savedDates, setSavedDates] = useState<Set<string>>(new Set());
 
   // Attendance State: Record<DateString, Record<StudentId, Status>>
   const [attendanceData, setAttendanceData] = useState<Record<string, Record<number, Status>>>({});
@@ -79,7 +78,6 @@ export default function AttendanceApp() {
             ...records,
           },
         }));
-        setSavedDates((prev) => new Set(prev).add(dateStr));
       }
     } catch (err) {
       console.warn(`Could not load records for ${dateStr}:`, err);
@@ -149,11 +147,7 @@ export default function AttendanceApp() {
   const isPastCutoff = simulatedTime.hours > 9 || (simulatedTime.hours === 9 && simulatedTime.minutes >= 45);
 
   const handleMarkAttendance = (studentId: number, status: 'pre' | 'ab' | 'od') => {
-    // If locked by clock in prototype, switch to simulation mode so teacher can test
-    if (isPastCutoff && !isSimulationActive) {
-      setIsSimulationActive(true);
-      setSimulatedTime({ hours: 9, minutes: 30 });
-    }
+    if (isPastCutoff) return; // Prevent edits if locked
 
     setAttendanceData((prev) => ({
       ...prev,
@@ -166,10 +160,7 @@ export default function AttendanceApp() {
 
   // Mark all students as Leave (Absent) for the current day
   const handleMarkAllLeave = () => {
-    if (isPastCutoff && !isSimulationActive) {
-      setIsSimulationActive(true);
-      setSimulatedTime({ hours: 9, minutes: 30 });
-    }
+    if (isPastCutoff) return;
 
     setAttendanceData((prev) => {
       const updatedDay: Record<number, Status> = {};
@@ -184,16 +175,13 @@ export default function AttendanceApp() {
 
     setNotification({
       type: 'success',
-      message: `Marked all ${students.length} students as Leave for ${selectedDateStr}. Click "Submit Attendance" to save to Supabase.`,
+      message: `Marked all ${students.length} students as Leave for ${selectedDateStr}. Click "Submit Attendance" to save.`,
     });
   };
 
   // Mark all students as Present for the current day
   const handleMarkAllPresent = () => {
-    if (isPastCutoff && !isSimulationActive) {
-      setIsSimulationActive(true);
-      setSimulatedTime({ hours: 9, minutes: 30 });
-    }
+    if (isPastCutoff) return;
 
     setAttendanceData((prev) => {
       const updatedDay: Record<number, Status> = {};
@@ -208,16 +196,17 @@ export default function AttendanceApp() {
 
     setNotification({
       type: 'success',
-      message: `Marked all ${students.length} students as Present for ${selectedDateStr}. Click "Submit Attendance" to save.`,
+      message: `Marked all ${students.length} students as Present for ${selectedDateStr}.`,
     });
   };
 
   const isDayPending = (dateStr: string): boolean => {
-    return !savedDates.has(dateStr);
+    if (!attendanceData[dateStr]) return true;
+    return Object.values(attendanceData[dateStr]).some((status) => status === null);
   };
 
   const handleSubmit = async () => {
-    if (isSubmitting) return;
+    if (isPastCutoff || !isDayPending(selectedDateStr)) return;
 
     setIsSubmitting(true);
     setNotification(null);
@@ -230,31 +219,21 @@ export default function AttendanceApp() {
         status: status as 'pre' | 'ab' | 'od',
       }));
 
-    if (records.length === 0) {
-      setNotification({
-        type: 'error',
-        message: 'Please mark at least one student before saving.',
-      });
-      setIsSubmitting(false);
-      return;
-    }
-
     try {
       await apiService.submitAttendance(
         {
           date: selectedDateStr,
           records,
         },
-        isSimulationActive ? simulatedTime : { hours: 9, minutes: 30 }
+        isSimulationActive ? simulatedTime : undefined
       );
 
       // Re-fetch straight from Supabase to guarantee state persistence
-      setSavedDates((prev) => new Set(prev).add(selectedDateStr));
       await loadAttendanceForDate(selectedDateStr);
 
       setNotification({
         type: 'success',
-        message: `✅ Attendance for ${selectedDateStr} saved to Supabase successfully!`,
+        message: `Attendance for ${selectedDateStr} saved to database successfully!`,
       });
     } catch (err: any) {
       setNotification({
@@ -271,9 +250,6 @@ export default function AttendanceApp() {
     return <LoginView classDetails={classDetails} onLogin={() => setView('dashboard')} />;
   }
 
-  const currentRecords = attendanceData[selectedDateStr] || {};
-  const markedCount = Object.values(currentRecords).filter((s) => s !== null).length;
-  const isSaved = savedDates.has(selectedDateStr);
   const currentDayPending = isDayPending(selectedDateStr);
   const currentTimeFormatted = `${String(simulatedTime.hours).padStart(2, '0')}:${String(simulatedTime.minutes).padStart(2, '0')}`;
 
@@ -375,31 +351,23 @@ export default function AttendanceApp() {
         {/* Submit Attendance Button */}
         <div className="mt-8">
           <button
-            disabled={isSubmitting || markedCount === 0}
+            disabled={isPastCutoff || !currentDayPending || isSubmitting}
             onClick={handleSubmit}
             className={`w-full rounded-2xl py-4 font-semibold text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
-              isSubmitting
-                ? 'bg-purple-800 text-white cursor-wait opacity-90'
-                : markedCount === 0
+              isPastCutoff
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none'
-                : isSaved
-                ? 'bg-purple-950 hover:bg-purple-900 text-white active:scale-[0.99]'
-                : 'bg-purple-600 hover:bg-purple-700 text-white active:scale-[0.99]'
+                : !currentDayPending
+                ? 'bg-purple-950 text-white cursor-default'
+                : 'bg-purple-900 text-white hover:bg-purple-800 active:scale-[0.99]'
             }`}
           >
-            {isSubmitting ? (
-              'Saving to Supabase...'
-            ) : isSaved ? (
-              <>
-                <CheckCheck size={20} />
-                Update in Supabase ({markedCount}/{students.length} Marked)
-              </>
-            ) : (
-              <>
-                <CheckCheck size={20} />
-                Submit Attendance to Supabase ({markedCount}/{students.length} Marked)
-              </>
-            )}
+            {isSubmitting
+              ? 'Submitting...'
+              : isPastCutoff
+              ? 'Attendance Locked'
+              : !currentDayPending
+              ? 'All Marked (Saved)'
+              : 'Submit Attendance'}
           </button>
         </div>
       </main>
