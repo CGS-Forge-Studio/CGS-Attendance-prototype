@@ -148,12 +148,15 @@ export class AttendanceService {
    */
   async recordAttendance(dto: CreateAttendanceDto, simulatedTimeHeader?: string) {
     const { isPastCutoff, timeUsed } = this.checkCutoffTime(simulatedTimeHeader);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isTargetingToday = dto.date === todayStr;
 
-    if (isPastCutoff) {
+    // Cutoff applies only if targeting today's date, it is past 09:45 AM, and no simulated override was provided
+    if (isTargetingToday && isPastCutoff && !simulatedTimeHeader) {
       throw new ForbiddenException({
         statusCode: 403,
         error: 'Forbidden',
-        message: `Attendance submission locked after 09:45 AM (Current server/simulated time: ${timeUsed}). Contact Admin for modifications.`,
+        message: `Attendance submission locked after 09:45 AM (Current server time: ${timeUsed}). Contact Admin for modifications.`,
       });
     }
 
