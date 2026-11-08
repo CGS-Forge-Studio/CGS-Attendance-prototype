@@ -7,7 +7,7 @@ import { StatusBanner } from '../components/StatusBanner';
 import { StudentList } from '../components/StudentList';
 import { Student, Status, ClassDetails, SimulatedTime } from '../types/attendance';
 import { apiService } from '../services/api';
-import { ArrowLeft, CheckCircle2, CheckCheck, UserX, Check } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CheckCheck, Check, CalendarOff } from 'lucide-react';
 
 const DEFAULT_STUDENTS: Student[] = Array.from({ length: 40 }, (_, i) => {
   const suffix = (i + 1).toString().padStart(2, '0');
@@ -67,6 +67,19 @@ export default function AttendanceApp() {
   const [savedDates, setSavedDates] = useState<Record<string, boolean>>({});
   // Track dirty changes made by user
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<Record<string, boolean>>({});
+
+  // Non-instructional Holiday / Off Day State (Zero backend schema change)
+  const [holidays, setHolidays] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('cgs_holidays');
+        return stored ? JSON.parse(stored) : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -156,9 +169,10 @@ export default function AttendanceApp() {
 
   // 9:45 AM Cutoff check
   const isPastCutoff = simulatedTime.hours > 9 || (simulatedTime.hours === 9 && simulatedTime.minutes >= 45);
+  const isCurrentHoliday = !!holidays[selectedDateStr];
 
   const handleMarkAttendance = (studentId: number, status: 'pre' | 'ab' | 'od') => {
-    if (isPastCutoff) return; // Prevent edits if locked
+    if (isPastCutoff || isCurrentHoliday) return; // Prevent edits if locked or holiday
 
     setAttendanceData((prev) => ({
       ...prev,
@@ -170,31 +184,28 @@ export default function AttendanceApp() {
     setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: true }));
   };
 
-  // Mark all students as Leave (Absent) for the current day
-  const handleMarkAllLeave = () => {
-    if (isPastCutoff) return;
-
-    setAttendanceData((prev) => {
-      const updatedDay: Record<number, Status> = {};
-      students.forEach((s) => {
-        updatedDay[s.id] = 'ab';
-      });
-      return {
-        ...prev,
-        [selectedDateStr]: updatedDay,
-      };
+  // Toggle "Holiday / Off Day" for the current date (Zero schema change — no Supabase submission)
+  const handleToggleHoliday = () => {
+    const nextState = !holidays[selectedDateStr];
+    setHolidays((prev) => {
+      const updated = { ...prev, [selectedDateStr]: nextState };
+      try {
+        localStorage.setItem('cgs_holidays', JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
-    setHasUnsavedChanges((prev) => ({ ...prev, [selectedDateStr]: true }));
 
     setNotification({
       type: 'success',
-      message: `Marked all ${students.length} students as Leave for ${selectedDateStr}. Click "Submit Attendance" to save.`,
+      message: nextState
+        ? `Marked ${selectedDateStr} as Holiday / Off Day — Attendance Not Required.`
+        : `Holiday removed for ${selectedDateStr}. Regular attendance enabled.`,
     });
   };
 
   // Mark all students as Present for the current day
   const handleMarkAllPresent = () => {
-    if (isPastCutoff) return;
+    if (isPastCutoff || isCurrentHoliday) return;
 
     setAttendanceData((prev) => {
       const updatedDay: Record<number, Status> = {};
@@ -214,13 +225,14 @@ export default function AttendanceApp() {
     });
   };
 
-  // A date is pending if it has not yet been saved to Supabase
+  // A date is pending if it has not yet been saved to Supabase (and is not an off-day / holiday)
   const isDayPending = (dateStr: string): boolean => {
+    if (holidays[dateStr]) return false;
     return !savedDates[dateStr];
   };
 
   const handleSubmit = async () => {
-    if (isPastCutoff || isSubmitting) return;
+    if (isCurrentHoliday || isPastCutoff || isSubmitting) return;
 
     const currentRecords = attendanceData[selectedDateStr] || {};
     const records = Object.entries(currentRecords)
@@ -279,7 +291,7 @@ export default function AttendanceApp() {
 
   const isSaved = !!savedDates[selectedDateStr];
   const isDirty = !!hasUnsavedChanges[selectedDateStr];
-  const canSubmit = !isPastCutoff && !isSubmitting && (isDirty || !isSaved);
+  const canSubmit = !isCurrentHoliday && !isPastCutoff && !isSubmitting && (isDirty || !isSaved);
   const currentTimeFormatted = `${String(simulatedTime.hours).padStart(2, '0')}:${String(simulatedTime.minutes).padStart(2, '0')}`;
 
   return (
@@ -333,9 +345,10 @@ export default function AttendanceApp() {
           </div>
         )}
 
-        {/* Status Card (Open / Cutoff Locked with Live Clock) */}
+        {/* Status Card (Open / Cutoff Locked with Live Clock / Holiday) */}
         <StatusBanner
           isPastCutoff={isPastCutoff}
+          isHoliday={isCurrentHoliday}
           currentTimeFormatted={currentTimeFormatted}
           isSimulated={isSimulationActive}
           onUnlockSimulation={() => {
@@ -355,7 +368,7 @@ export default function AttendanceApp() {
 
           <div className="flex items-center gap-2">
             <button
-              disabled={isPastCutoff}
+              disabled={isPastCutoff || isCurrentHoliday}
               onClick={handleMarkAllPresent}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Mark all students Present"
@@ -363,23 +376,51 @@ export default function AttendanceApp() {
               <CheckCheck size={14} /> All Present
             </button>
             <button
-              disabled={isPastCutoff}
-              onClick={handleMarkAllLeave}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-              title="Mark all students Absent / Day Leave"
+              onClick={handleToggleHoliday}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all shadow-sm ${
+                isCurrentHoliday
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+              }`}
+              title={isCurrentHoliday ? 'Click to resume instructional day' : 'Mark as Holiday / Off Day'}
             >
-              <UserX size={14} /> Mark Day Leave (All Leave)
+              <CalendarOff size={14} />
+              {isCurrentHoliday ? 'Holiday / Off Day (Active)' : 'Mark as Holiday / Off Day'}
             </button>
           </div>
         </div>
 
-        {/* Student List */}
-        <StudentList
-          students={students}
-          currentAttendance={attendanceData[selectedDateStr] || {}}
-          isPastCutoff={isPastCutoff}
-          onMarkAttendance={handleMarkAttendance}
-        />
+        {/* Student List with Holiday Overlay */}
+        <div className="relative">
+          {isCurrentHoliday && (
+            <div className="absolute inset-0 z-20 bg-white/80 backdrop-blur-[2px] rounded-3xl flex flex-col items-center justify-center p-6 text-center border-2 border-dashed border-amber-300 shadow-sm animate-in fade-in duration-200">
+              <div className="w-16 h-16 bg-amber-100 text-amber-800 rounded-2xl flex items-center justify-center mb-3 shadow-inner">
+                <CalendarOff size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 mb-1">
+                School Closed / Holiday
+              </h3>
+              <p className="text-sm font-semibold text-amber-800 max-w-sm mb-4">
+                Attendance Not Required
+              </p>
+              <button
+                onClick={handleToggleHoliday}
+                className="px-4 py-2 bg-white text-gray-800 text-xs font-bold rounded-xl border border-gray-300 hover:bg-gray-50 transition-colors shadow-sm"
+              >
+                Change to Instructional Day
+              </button>
+            </div>
+          )}
+
+          <div className={isCurrentHoliday ? 'opacity-30 pointer-events-none select-none filter blur-[0.5px]' : ''}>
+            <StudentList
+              students={students}
+              currentAttendance={attendanceData[selectedDateStr] || {}}
+              isPastCutoff={isPastCutoff || isCurrentHoliday}
+              onMarkAttendance={handleMarkAttendance}
+            />
+          </div>
+        </div>
 
         {/* Submit Attendance Button */}
         <div className="mt-8">
@@ -387,7 +428,9 @@ export default function AttendanceApp() {
             disabled={!canSubmit}
             onClick={handleSubmit}
             className={`w-full rounded-2xl py-4 font-semibold text-lg transition-all shadow-lg flex items-center justify-center gap-2 ${
-              isPastCutoff
+              isCurrentHoliday
+                ? 'bg-gray-200 text-gray-500 cursor-not-allowed shadow-none border border-gray-300'
+                : isPastCutoff
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed shadow-none'
                 : isSubmitting
                 ? 'bg-purple-800 text-white cursor-wait opacity-90'
@@ -396,7 +439,12 @@ export default function AttendanceApp() {
                 : 'bg-purple-900 text-white hover:bg-purple-800 active:scale-[0.99] shadow-purple-200'
             }`}
           >
-            {isSubmitting ? (
+            {isCurrentHoliday ? (
+              <>
+                <CalendarOff size={20} className="text-gray-400" />
+                School Closed / Holiday — Attendance Not Required
+              </>
+            ) : isSubmitting ? (
               'Submitting to Supabase...'
             ) : isPastCutoff ? (
               'Attendance Locked (> 09:45 AM)'

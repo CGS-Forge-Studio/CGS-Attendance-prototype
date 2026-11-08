@@ -1,10 +1,11 @@
 'use client';
 
 import React from 'react';
-import { Clock, AlertCircle, PlayCircle } from 'lucide-react';
+import { Clock, AlertCircle, PlayCircle, CalendarOff } from 'lucide-react';
 
 interface StatusBannerProps {
   isPastCutoff: boolean;
+  isHoliday?: boolean;
   currentTimeFormatted?: string;
   isSimulated?: boolean;
   onUnlockSimulation?: () => void;
@@ -12,10 +13,29 @@ interface StatusBannerProps {
 
 export const StatusBanner: React.FC<StatusBannerProps> = ({
   isPastCutoff,
+  isHoliday = false,
   currentTimeFormatted,
   isSimulated,
   onUnlockSimulation,
 }) => {
+  if (isHoliday) {
+    return (
+      <div className="mb-6 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 bg-amber-50 text-amber-900 border border-amber-200 transition-colors">
+        <div className="flex items-center gap-3.5">
+          <div className="p-2 rounded-xl flex-shrink-0 bg-amber-100 text-amber-800">
+            <CalendarOff size={24} />
+          </div>
+          <div>
+            <h3 className="font-semibold text-base leading-tight">School Closed / Holiday</h3>
+            <p className="text-xs sm:text-sm mt-0.5 text-amber-700">
+              Non-instructional day — Attendance submission is disabled for this date.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`mb-6 p-4 rounded-2xl flex flex-wrap items-center justify-between gap-4 transition-colors ${
