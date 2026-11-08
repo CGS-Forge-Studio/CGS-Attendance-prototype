@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Search, Bell, Clock, RotateCcw, X } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Bell, BarChart3, Clock, RotateCcw, X } from 'lucide-react';
 import { SimulatedTime } from '../types/attendance';
 
 interface DashboardHeaderProps {
@@ -80,6 +81,16 @@ export const DashboardHeader: React.FC<DashboardHeaderProps> = ({
             <Bell size={21} />
             <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-purple-600 rounded-full"></span>
           </button>
+
+          {/* Performance & Analytics Link */}
+          <Link
+            href="/analytics"
+            aria-label="Attendance Analytics"
+            className="p-2 hover:bg-purple-50 rounded-full transition-colors text-gray-500 hover:text-purple-700 relative"
+            title="Attendance Performance & Analytics"
+          >
+            <BarChart3 size={21} />
+          </Link>
 
           {/* Time Controller Button */}
           <button

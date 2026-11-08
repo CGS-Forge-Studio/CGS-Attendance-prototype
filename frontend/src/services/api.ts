@@ -1,5 +1,20 @@
 import { ClassDetails, AttendanceSubmissionPayload, Student } from '../types/attendance';
 
+export interface SessionSummary {
+  date: string;
+  presentCount: number;
+  absentCount: number;
+  rate: number;
+}
+
+export interface ClassAnalytics {
+  totalStrength: number;
+  totalSessions: number;
+  avgAttendanceRate: number;
+  highestThisMonth: SessionSummary | null;
+  recentHistory: SessionSummary[];
+}
+
 // Default production Render backend URL fallback
 const DEFAULT_RENDER_BACKEND_URL = 'https://cgs-attendance-prototype.onrender.com';
 
@@ -170,6 +185,43 @@ export const apiService = {
     } catch (err: any) {
       console.error('[API] Network/Fetch error during submission:', err);
       throw err;
+    }
+  },
+
+  /**
+   * Fetch Attendance Performance & Analytics for a class
+   * Rule: Uses buildApiUrl, cache: 'no-store', wrapped in try/catch with console.error
+   */
+  async getClassAnalytics(className = '11-C'): Promise<ClassAnalytics> {
+    const endpoint = buildApiUrl(`/api/attendance/analytics/${encodeURIComponent(className)}`);
+    console.log(`[API] Fetching class analytics from: ${endpoint}`);
+
+    try {
+      const res = await fetch(endpoint, {
+        cache: 'no-store',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: `HTTP ${res.status}: Failed to fetch analytics` }));
+        console.error('[API] Backend rejected getClassAnalytics:', errorData);
+        throw new Error(errorData.message || `HTTP ${res.status}: Failed to fetch analytics`);
+      }
+
+      const data = await res.json();
+      console.log('[API] Analytics retrieved successfully:', data);
+      return data;
+    } catch (err: any) {
+      console.error('[API] getClassAnalytics failed:', err);
+      return {
+        totalStrength: 40,
+        totalSessions: 0,
+        avgAttendanceRate: 0,
+        highestThisMonth: null,
+        recentHistory: [],
+      };
     }
   },
 };

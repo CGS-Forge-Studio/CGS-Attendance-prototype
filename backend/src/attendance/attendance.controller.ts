@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Headers, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, Headers, HttpCode, HttpStatus } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { CreateAttendanceDto } from './dto/create-attendance.dto';
 import { AttendanceQueryDto } from './dto/attendance-query.dto';
@@ -24,6 +24,15 @@ export class AttendanceController {
   async getAttendance(@Query() query: AttendanceQueryDto) {
     const targetDate = query.date || new Date().toISOString().split('T')[0];
     return this.attendanceService.getAttendanceByDate(targetDate);
+  }
+
+  /**
+   * GET /api/attendance/analytics/:className
+   * Isolated read-only endpoint returning attendance performance & metrics
+   */
+  @Get('analytics/:className')
+  async getAnalytics(@Param('className') className: string) {
+    return this.attendanceService.getClassAnalytics(className);
   }
 
   /**
