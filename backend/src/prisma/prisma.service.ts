@@ -7,11 +7,18 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   public isConnected = false;
 
   constructor() {
+    let url = (process.env.DATABASE_URL || '').trim().replace(/^["']|["']$/g, '');
+
+    // Supabase Connection Pooler on port 6543 requires ?pgbouncer=true for Prisma to disable prepared statements
+    if (url.includes(':6543') && !url.includes('pgbouncer=true')) {
+      url += (url.includes('?') ? '&' : '?') + 'pgbouncer=true';
+    }
+
     super({
       log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
       datasources: {
         db: {
-          url: process.env.DATABASE_URL,
+          url,
         },
       },
     });

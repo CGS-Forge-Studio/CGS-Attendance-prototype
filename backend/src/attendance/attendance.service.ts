@@ -78,23 +78,28 @@ export class AttendanceService {
    */
   async getAttendanceDates(): Promise<DateStatusItem[]> {
     const result: DateStatusItem[] = [];
-    let d = new Date();
-    let added = 0;
+    const today = new Date();
+    const todayStr = formatLocalDate(today);
+    const todayAttendance = await this.getAttendanceByDate(todayStr);
+    result.push({
+      date: todayStr,
+      day: today.toLocaleDateString('en-US', { weekday: 'short' }),
+      isPending: todayAttendance.isPending,
+    });
 
-    while (added < 7) {
+    let d = new Date(today);
+    d.setDate(d.getDate() - 1);
+    while (result.length < 7) {
       if (d.getDay() !== 0) {
         const dateStr = formatLocalDate(d);
         const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
         
         const attendanceData = await this.getAttendanceByDate(dateStr);
-        const isPending = attendanceData.isPending;
-
         result.unshift({
           date: dateStr,
           day: dayName,
-          isPending,
+          isPending: attendanceData.isPending,
         });
-        added++;
       }
       d.setDate(d.getDate() - 1);
     }

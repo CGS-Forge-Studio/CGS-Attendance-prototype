@@ -98,25 +98,26 @@ export default function AttendanceApp() {
       }
     });
 
-    // 3. Initialize real-world dates: last 6 working days ending today (excluding Sundays)
+    // 3. Initialize dates: include today and the previous working days
     const dates: Date[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    // Always include today so the current day is selectable and testable
+    dates.push(new Date(today));
+
     const d = new Date(today);
-    let daysAdded = 0;
-    while (daysAdded < 6) {
-      if (d.getDay() !== 0) { // Exclude Sunday
+    d.setDate(d.getDate() - 1);
+    while (dates.length < 7) {
+      if (d.getDay() !== 0) { // Exclude past Sundays
         dates.unshift(new Date(d));
-        daysAdded++;
       }
       d.setDate(d.getDate() - 1);
     }
     setAvailableDates(dates);
 
-    // Active date is today (or the last working day if today is Sunday)
-    const activeDate = today.getDay() === 0 ? dates[dates.length - 1] : today;
-    const activeDateStr = formatLocalDate(activeDate);
+    // Active date defaults to today
+    const activeDateStr = formatLocalDate(today);
     setSelectedDateStr(activeDateStr);
 
     // Initialize blank structure for all available dates
